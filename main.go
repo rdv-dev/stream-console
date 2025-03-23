@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
@@ -28,7 +29,10 @@ func serveHTML(w http.ResponseWriter, r *http.Request) {
 func messageHandler(conChan <-chan ConsoleMessage) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		controlChan := make(chan []byte)
+
 		conn, err := upgrader.Upgrade(w, r, nil)
+
 		if err != nil {
 			log.Println("Error upgrading HTTP connection to websocket:", err)
 		}
@@ -36,14 +40,33 @@ func messageHandler(conChan <-chan ConsoleMessage) http.Handler {
 
 		log.Println("Message Handler ready to forward messages to console")
 
-		mm := <-conChan
+		go func() {
+			for {
+				_, message, err := conn.ReadMessage()
+				if err != nil {
+					log.Println("Error reading Message Handler messages from websocket:", err)
+					close(controlChan)
+					return
+				}
+				controlChan <- message
+			}
+		}()
 
 		for {
-			if err := conn.WriteMessage(websocket.TextMessage, []byte(mm.PrintMessage())); err != nil {
-				log.Println("Error sending message:", err)
+			select {
+			case mm := <-conChan:
+				if err := conn.WriteMessage(websocket.TextMessage, []byte(mm.PrintMessage())); err != nil {
+					log.Println("Error sending message:", err)
+					return
+				}
+			case message, ok := <-controlChan:
+				if !ok {
+					log.Println("Websocket management connection closed by client")
+					return
+				}
+				cmd := fmt.Sprintf("%s", message)
+				log.Println("Command received: " + cmd)
 			}
-
-			mm = <-conChan
 		}
 	})
 }
@@ -58,6 +81,7 @@ func main() {
 	// use websockets to send incremental updates to the management page and also to handle messages from page
 
 	consoleChan := make(chan ConsoleMessage)
+	defer close(consoleChan)
 
 	mux := http.NewServeMux()
 
