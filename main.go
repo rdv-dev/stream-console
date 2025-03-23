@@ -5,7 +5,12 @@ import (
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"time"
 )
+
+type ConsoleCommand struct {
+	Command string
+}
 
 type ConsoleMessage struct {
 	Message string
@@ -26,11 +31,12 @@ func serveHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 // Sends any messages queued to be displayed to control console log
-func messageHandler(conChan <-chan ConsoleMessage) http.Handler {
+func messageHandler(conChan <-chan ConsoleMessage, ctlChan chan<- ConsoleCommand) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		controlChan := make(chan []byte)
-
+		readMsgChan := make(chan []byte)
+		cmd := ""
+		hasCmd := false
 		conn, err := upgrader.Upgrade(w, r, nil)
 
 		if err != nil {
@@ -45,10 +51,10 @@ func messageHandler(conChan <-chan ConsoleMessage) http.Handler {
 				_, message, err := conn.ReadMessage()
 				if err != nil {
 					log.Println("Error reading Message Handler messages from websocket:", err)
-					close(controlChan)
+					close(readMsgChan)
 					return
 				}
-				controlChan <- message
+				readMsgChan <- message
 			}
 		}()
 
@@ -59,13 +65,23 @@ func messageHandler(conChan <-chan ConsoleMessage) http.Handler {
 					log.Println("Error sending message:", err)
 					return
 				}
-			case message, ok := <-controlChan:
+			case message, ok := <-readMsgChan:
 				if !ok {
 					log.Println("Websocket management connection closed by client")
 					return
 				}
-				cmd := fmt.Sprintf("%s", message)
-				log.Println("Command received: " + cmd)
+				cmd = fmt.Sprintf("%s", message)
+				hasCmd = true
+			}
+
+			if hasCmd {
+				select {
+				case ctlChan <- ConsoleCommand{Command: cmd}:
+					cmd = ""
+					hasCmd = false
+				default:
+					time.Sleep(50 * time.Millisecond)
+				}
 			}
 		}
 	})
@@ -80,17 +96,27 @@ func main() {
 	// use HTTP to serve the main management page
 	// use websockets to send incremental updates to the management page and also to handle messages from page
 
-	consoleChan := make(chan ConsoleMessage)
+	consoleChan := make(chan ConsoleMessage, 50)
+	controlChan := make(chan ConsoleCommand, 50)
 	defer close(consoleChan)
+	defer close(controlChan)
 
 	mux := http.NewServeMux()
 
-	mh := messageHandler(consoleChan)
+	mh := messageHandler(consoleChan, controlChan)
 
 	mux.Handle("/msg", mh)
 	mux.HandleFunc("/", serveHTML)
 
 	log.Print("Management Server Started...")
+
+	go func() {
+		for {
+			consoleChan <- ConsoleMessage{Message: "Hello!"}
+			log.Println("Got command: " + (<-controlChan).Command)
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
 
 	http.ListenAndServe(":8765", mux)
 }
