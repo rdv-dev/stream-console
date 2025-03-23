@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Example</title>
+    <script>
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket("ws://localhost:8765/msg");
+
+            socket.onopen = () => {
+                appendLog("Connected to management server.");
+            };
+
+            socket.onmessage = (event) => {
+                appendLog(`Server: ${event.data}`);
+            };
+
+            socket.onclose = () => {
+                appendLog("WebSocket connection closed.");
+            };
+
+            socket.onerror = (error) => {
+                appendLog(`WebSocket error: ${error}`);
+            };
+        }
+
+        function sendMessage(message) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(message);
+                appendLog(`You: ${message}`);
+            } else {
+                appendLog("WebSocket is not connected.");
+            }
+        }
+
+        function appendLog(message) {
+            const logArea = document.getElementById("log");
+            logArea.value += `${message}\n`;
+            logArea.scrollTop = logArea.scrollHeight; // Scroll to the bottom
+        }
+    </script>
+</head>
+<body>
+    <h1>Stream Management Page</h1>
+    <textarea id="log" readonly style="width: 75%; height: 800px;"></textarea>
+    <br>
+    <button onclick="connectWebSocket()">Connect</button>
+    <button onclick="sendMessage('Button 1 clicked!')">Button 1</button>
+    <button onclick="sendMessage('Button 2 clicked!')">Button 2</button>
+</body>
+</html>
+
