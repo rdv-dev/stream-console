@@ -21,8 +21,14 @@ func (mm *ConsoleMessage) PrintMessage() string {
 }
 
 var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // DEVELOLPMENT ONLY CHANGE FOR PRODUCTION
+		origin := r.Header.Get("Origin")
+		if origin == "http://localhost:8765" {
+			return true
+		}
+		return false
 	},
 }
 
