@@ -4,58 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"github.com/rdv-dev/stream-console/Types"
 	"log"
 	"net/http"
 	"time"
 )
-
-type ConsoleType int
-
-const (
-	ConsoleTypeAll ConsoleType = iota
-)
-
-func (c ConsoleType) String() string {
-	switch c {
-	case ConsoleTypeAll:
-		return "All"
-	}
-
-	return "invalid"
-}
-
-type SystemModule int
-
-const (
-	SystemMain SystemModule = iota
-	SystemTwitchManager
-)
-
-func (s SystemModule) String() string {
-	switch s {
-	case SystemMain:
-		return "Main"
-	case SystemTwitchManager:
-		return "TwitchManager"
-	}
-
-	return "invalid"
-}
-
-type SystemCommand struct {
-	Command string
-	Source  SystemModule
-	Target  SystemModule
-}
-
-type ConsoleMessage struct {
-	Message string
-	Source  ConsoleType
-}
-
-func (mm *ConsoleMessage) PrintMessage() string {
-	return mm.Message
-}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -74,12 +27,12 @@ type ConsoleHandle struct {
 	outMessages []string
 	inMessages  []string
 	readMsgChan chan []byte
-	ConsoleType ConsoleType
+	ConsoleType Types.ConsoleType
 	conn        *websocket.Conn
 	Active      bool
 }
 
-func newConsoleHandle(w http.ResponseWriter, r *http.Request, messageType ConsoleType) *ConsoleHandle {
+func newConsoleHandle(w http.ResponseWriter, r *http.Request, messageType Types.ConsoleType) *ConsoleHandle {
 	conn, err := upgrader.Upgrade(w, r, nil)
 
 	if err != nil {
@@ -123,9 +76,9 @@ func (c *ConsoleHandle) Close() {
 }
 
 type ConsoleState struct {
-	consoleChannel chan ConsoleMessage
-	controlChannel chan SystemCommand
-	consoleBacklog []*ConsoleMessage
+	consoleChannel chan Types.ConsoleMessage
+	controlChannel chan Types.SystemCommand
+	consoleBacklog []*Types.ConsoleMessage
 	handles        []*ConsoleHandle
 	numHandles     int
 }
@@ -147,13 +100,13 @@ func (c *ConsoleState) Register(ch *ConsoleHandle) {
 
 }
 
-func (c *ConsoleState) WriteMessage(message ConsoleMessage) {
+func (c *ConsoleState) WriteMessage(message Types.ConsoleMessage) {
 	if c.numHandles == 0 {
 		c.consoleBacklog = append(c.consoleBacklog, &message)
 		return
 	}
 
-	if message.Source == ConsoleTypeAll {
+	if message.Source == Types.ConsoleTypeAll {
 		for i := range c.handles {
 			if c.handles[i].Active {
 				err := c.handles[i].WriteMessage(message.PrintMessage())
@@ -187,7 +140,7 @@ func messageHandler(state *ConsoleState) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		myHandle := newConsoleHandle(w, r, ConsoleTypeAll)
+		myHandle := newConsoleHandle(w, r, Types.ConsoleTypeAll)
 		if myHandle == nil {
 			log.Println("Failed to set up websocket")
 			return
@@ -211,9 +164,9 @@ func main() {
 	// use websockets to send incremental updates to the management page and also to handle messages from page
 
 	mainState := &ConsoleState{
-		consoleChannel: make(chan ConsoleMessage, 50),
-		controlChannel: make(chan SystemCommand, 50),
-		consoleBacklog: make([]*ConsoleMessage, 0),
+		consoleChannel: make(chan Types.ConsoleMessage, 50),
+		controlChannel: make(chan Types.SystemCommand, 50),
+		consoleBacklog: make([]*Types.ConsoleMessage, 0),
 		handles:        make([]*ConsoleHandle, 0),
 		numHandles:     0}
 
@@ -234,7 +187,7 @@ func main() {
 			//mainState.consoleChannel <- ConsoleMessage{Message: "Hello!", Source: ConsoleTypeAll}
 
 			//mm := <-mainState.consoleChannel
-			mainState.WriteMessage(ConsoleMessage{Message: "Hello!", Source: ConsoleTypeAll})
+			mainState.WriteMessage(Types.ConsoleMessage{Message: "Hello!", Source: Types.ConsoleTypeAll})
 
 			time.Sleep(time.Second)
 
