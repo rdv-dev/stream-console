@@ -24,8 +24,28 @@ func (c ConsoleType) String() string {
 	return "invalid"
 }
 
-type ConsoleCommand struct {
+type SystemModule int
+
+const (
+	SystemMain SystemModule = iota
+	SystemTwitchManager
+)
+
+func (s SystemModule) String() string {
+	switch s {
+	case SystemMain:
+		return "Main"
+	case SystemTwitchManager:
+		return "TwitchManager"
+	}
+
+	return "invalid"
+}
+
+type SystemCommand struct {
 	Command string
+	Source  SystemModule
+	Target  SystemModule
 }
 
 type ConsoleMessage struct {
@@ -104,7 +124,7 @@ func (c *ConsoleHandle) Close() {
 
 type ConsoleState struct {
 	consoleChannel chan ConsoleMessage
-	controlChannel chan ConsoleCommand
+	controlChannel chan SystemCommand
 	consoleBacklog []*ConsoleMessage
 	handles        []*ConsoleHandle
 	numHandles     int
@@ -192,7 +212,7 @@ func main() {
 
 	mainState := &ConsoleState{
 		consoleChannel: make(chan ConsoleMessage, 50),
-		controlChannel: make(chan ConsoleCommand, 50),
+		controlChannel: make(chan SystemCommand, 50),
 		consoleBacklog: make([]*ConsoleMessage, 0),
 		handles:        make([]*ConsoleHandle, 0),
 		numHandles:     0}
@@ -236,7 +256,7 @@ func main() {
 						return
 					}
 
-					//mainState.controlChannel <- ConsoleCommand{Command: cmd}
+					//mainState.controlChannel <- SystemCommand{Command: cmd}
 					//log.Println("Got command: " + (<-mainState.controlChannel).Command)
 					log.Println("Got command: " + fmt.Sprintf("%s", message))
 				default:
