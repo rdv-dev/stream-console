@@ -46,6 +46,15 @@
             logArea.value += `${message}\n`;
             logArea.scrollTop = logArea.scrollHeight; // Scroll to the bottom
         }
+
+        function startTwitchEventSub() {
+            const command = {
+                Command: "start", Source:0, Target: 1
+            };
+            
+            const jsonString = JSON.stringify(command)
+            sendMessage(jsonString)
+        }
     </script>
 </head>
 <body>
@@ -53,7 +62,7 @@
     <textarea id="log" readonly style="width: 75%; height: 800px;"></textarea>
     <br>
     <button onclick="connectWebSocket()">Connect</button>
-    <button onclick="sendMessage('Button 1 clicked!')">Button 1</button>
+    <button onclick="startTwitchEventSub()">Connect TwitchEventSub</button>
     <button onclick="sendMessage('Button 2 clicked!')">Button 2</button>
 </body>
 </html>

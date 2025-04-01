@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/gorilla/websocket"
@@ -172,8 +173,8 @@ func main() {
 		handles:        make([]*ConsoleHandle, 0),
 		numHandles:     0}
 
-	incomingCommands := make(chan *Types.SystemCommand, 50)
-	outgoingCommands := make(chan *Types.SystemCommand, 50)
+	fromTwitchEventSub := make(chan *Types.SystemCommand, 50)
+	toTwitchEventSub := make(chan *Types.SystemCommand, 50)
 
 	mux := http.NewServeMux()
 
@@ -205,7 +206,6 @@ func main() {
 
 	go func() {
 		i := 0
-		queue := make([]*Types.SystemCommand, 0)
 		for {
 			if mainState.HasHandles() {
 				select {
@@ -215,17 +215,27 @@ func main() {
 						return
 					}
 
-					//mainState.controlChannel <- SystemCommand{Command: cmd}
-					//log.Println("Got command: " + (<-mainState.controlChannel).Command)
-					log.Println("Got command: " + fmt.Sprintf("%s", message))
-					queue = append(queue, &Types.SystemCommand{Command: fmt.Sprintf("%s", message), Source: Types.SystemMain})
+					var cmd Types.SystemCommand
+					err := json.Unmarshal(message, &cmd)
 
-				case command, ok := <-incomingCommands:
+					if err != nil {
+						log.Printf("Error unmarshalling command from Management Console: %s\n", message)
+					} else {
+						switch cmd.Target {
+						case Types.SystemTwitchManager:
+							log.Println("Sending command to TwitchEventSub")
+							toTwitchEventSub <- &cmd
+						default:
+							log.Printf("Unknown target received from Management Console: %d\n", cmd.Target)
+						}
+					}
+
+				case command, ok := <-fromTwitchEventSub:
 					if !ok {
 						log.Println("Websocket management connection closed by client")
 						return
 					}
-					log.Printf("Got command from somewhere %s\n", command.Command)
+					log.Printf("Got command from TwitchEventSub %s\n", command.Command)
 
 				default:
 					time.Sleep(25 * time.Millisecond)
@@ -239,7 +249,7 @@ func main() {
 		}
 	}()
 
-	TwitchEventSub.Setup(outgoingCommands, incomingCommands)
+	go TwitchEventSub.HandleReceive(toTwitchEventSub)
 
 	http.ListenAndServe(":8765", mux)
 }
