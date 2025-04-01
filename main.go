@@ -115,7 +115,7 @@ func (c *ConsoleState) Close() {
 }
 
 func serveHTML(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "static/index.html")
+	http.ServeFile(w, r, "static/ServerManagementMain.html")
 }
 
 // Sends any messages queued to be displayed to control console log
