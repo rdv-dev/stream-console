@@ -4,23 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"github.com/rdv-dev/stream-console/TwitchEventSub"
 	"github.com/rdv-dev/stream-console/Types"
 	"log"
 	"net/http"
 	"time"
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "http://localhost:8765" {
-			return true
-		}
-		return false
-	},
-}
 
 // This is a handle that an HTTP handler uses to forward data to the console it is connected to
 type ConsoleHandle struct {
@@ -32,13 +21,7 @@ type ConsoleHandle struct {
 	Active      bool
 }
 
-func newConsoleHandle(w http.ResponseWriter, r *http.Request, messageType Types.ConsoleType) *ConsoleHandle {
-	conn, err := upgrader.Upgrade(w, r, nil)
-
-	if err != nil {
-		log.Println("Error upgrading HTTP connection to websocket:", err)
-		return nil
-	}
+func newConsoleHandle(conn *websocket.Conn, messageType Types.ConsoleType) *ConsoleHandle {
 
 	return &ConsoleHandle{
 		readMsgChan: make(chan []byte, 25),
@@ -140,9 +123,28 @@ func messageHandler(state *ConsoleState) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		myHandle := newConsoleHandle(w, r, Types.ConsoleTypeAll)
+		upgrader := websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				origin := r.Header.Get("Origin")
+				if origin == "http://localhost:8765" {
+					return true
+				}
+				return false
+			},
+		}
+
+		conn, err := upgrader.Upgrade(w, r, nil)
+
+		if err != nil {
+			log.Fatal("Error upgrading HTTP connection to websocket:", err)
+			return
+		}
+
+		myHandle := newConsoleHandle(conn, Types.ConsoleTypeAll)
 		if myHandle == nil {
-			log.Println("Failed to set up websocket")
+			log.Fatal("Failed to set up websocket")
 			return
 		}
 		state.Register(myHandle)
@@ -169,6 +171,9 @@ func main() {
 		consoleBacklog: make([]*Types.ConsoleMessage, 0),
 		handles:        make([]*ConsoleHandle, 0),
 		numHandles:     0}
+
+	incomingCommands := make(chan *Types.SystemCommand, 50)
+	outgoingCommands := make(chan *Types.SystemCommand, 50)
 
 	mux := http.NewServeMux()
 
@@ -200,6 +205,7 @@ func main() {
 
 	go func() {
 		i := 0
+		queue := make([]*Types.SystemCommand, 0)
 		for {
 			if mainState.HasHandles() {
 				select {
@@ -212,6 +218,15 @@ func main() {
 					//mainState.controlChannel <- SystemCommand{Command: cmd}
 					//log.Println("Got command: " + (<-mainState.controlChannel).Command)
 					log.Println("Got command: " + fmt.Sprintf("%s", message))
+					queue = append(queue, &Types.SystemCommand{Command: fmt.Sprintf("%s", message), Source: Types.SystemMain})
+
+				case command, ok := <-incomingCommands:
+					if !ok {
+						log.Println("Websocket management connection closed by client")
+						return
+					}
+					log.Printf("Got command from somewhere %s\n", command.Command)
+
 				default:
 					time.Sleep(25 * time.Millisecond)
 				}
@@ -223,6 +238,8 @@ func main() {
 			}
 		}
 	}()
+
+	TwitchEventSub.Setup(outgoingCommands, incomingCommands)
 
 	http.ListenAndServe(":8765", mux)
 }
